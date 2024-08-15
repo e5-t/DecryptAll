@@ -1,4 +1,3 @@
-import os
 import marshal
 import pickle
 import json
@@ -6,124 +5,82 @@ import base64
 import zlib
 import bz2
 import lzma
+import os
+import sys
+import platform
+import getpass
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
-def decrypt_marshal(file_path):
-    """فك تشفير ملفات مشفرة باستخدام marshal"""
-    with open(file_path, 'rb') as f:
-        f.seek(16)  # تخطي رأس الملف
-        code = marshal.load(f)
-        return code
+def decrypt_marshal(data, key):
+    """Decrypt marshal data"""
+    # Unpickle the data to get the original code object
+    code_obj = marshal.loads(data)
 
-def decrypt_pickle(file_path):
-    """فك تشفير ملفات مشفرة باستخدام pickle"""
-    with open(file_path, 'rb') as f:
-        data = pickle.load(f)
-        return data
+    # Decrypt the code object using the provided key
+    decrypted_code_obj = decrypt_aes(pickle.dumps(code_obj), key, b"key")
 
-def decrypt_json(file_path):
-    """فك تشفير ملفات مشفرة باستخدام JSON"""
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-        return data
+    # Repickle the decrypted code object
+    decrypted_data = marshal.dumps(pickle.loads(decrypted_code_obj))
 
-def decrypt_base64(file_path):
-    """فك تشفير نصوص مشفرة بـ base64"""
-    with open(file_path, 'r') as f:
-        encoded_str = f.read()
-    decoded_bytes = base64.b64decode(encoded_str)
-    return decoded_bytes.decode('utf-8')
-
-def decrypt_zlib(file_path):
-    """فك تشفير البيانات المضغوطة باستخدام zlib"""
-    with open(file_path, 'rb') as f:
-        compressed_data = f.read()
-    decompressed_data = zlib.decompress(compressed_data)
-    return decompressed_data
-
-def decrypt_bz2(file_path):
-    """فك تشفير البيانات المضغوطة باستخدام bz2"""
-    with open(file_path, 'rb') as f:
-        compressed_data = f.read()
-    decompressed_data = bz2.decompress(compressed_data)
-    return decompressed_data
-
-def decrypt_lzma(file_path):
-    """فك تشفير البيانات المضغوطة باستخدام lzma"""
-    with open(file_path, 'rb') as f:
-        compressed_data = f.read()
-    decompressed_data = lzma.decompress(compressed_data)
-    return decompressed_data
-
-def decrypt_aes(file_path, key, iv):
-    """فك تشفير البيانات المشفرة باستخدام AES"""
-    if len(key) not in [16, 24, 32]:
-        raise ValueError("مفتاح التشفير يجب أن يكون بطول 16، 24، أو 32 بايت")
-    if len(iv) != 16:
-        raise ValueError("IV يجب أن يكون بطول 16 بايت")
-
-    with open(file_path, 'rb') as f:
-        encrypted_data = f.read()
-
-    cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
-    decryptor = cipher.decryptor()
-    decrypted_data = decryptor.update(encrypted_data) + decryptor.finalize()
     return decrypted_data
 
-def main():
-    current_path = os.path.dirname(os.path.realpath(__file__))
-    options = {
-        '1': ('marshal', decrypt_marshal),
-        '2': ('pickle', decrypt_pickle),
-        '3': ('json', decrypt_json),
-        '4': ('base64', decrypt_base64),
-        '5': ('zlib', decrypt_zlib),
-        '6': ('bz2', decrypt_bz2),
-        '7': ('lzma', decrypt_lzma),
-        '8': ('aes', decrypt_aes)
-    }
+def decrypt_pickle(data, key):
+    """Decrypt pickle data"""
+    # Unpickle the data to get the original object
+    original_obj = pickle.loads(data)
 
-    print("اختر نوع التشفير الذي تريد فك تشفيره:")
-    for key, value in options.items():
-        print(f"{key}. {value[0]}")
+    # Encrypt the object using the provided key
+    encrypted_obj = pickle.dumps(original_obj, protocol=pickle.HIGHEST_PROTOCOL)
+    encrypted_obj = decrypt_aes(encrypted_obj, key, b"key")
 
-    choice = input("أدخل رقم الخيار: ")
+    # Decrypt the object using the provided key
+    decrypted_obj = pickle.loads(encrypt_aes(encrypted_obj, key, b"key"))
 
-    if choice not in options:
-        print("اختيار غير صالح.")
-        return
+    # Return the decrypted object
+    return decrypted_obj
 
-    ext, decrypt_function = options[choice]
+def decrypt_json(data, key):
+    """Decrypt JSON data"""
+    # Decode the base64-encoded data
+    decoded_data = base64.b64decode(data)
 
-    if ext == 'aes':
-        key = input("أدخل مفتاح التشفير (يجب أن يكون بطول 16 أو 24 أو 32 بايت): ").encode()
-        iv = input("أدخل IV (يجب أن يكون بطول 16 بايت): ").encode()
-        for file in os.listdir(current_path):
-            if file.endswith('.enc'):
-                file_path = os.path.join(current_path, file)
-                try:
-                    decrypted_data = decrypt_function(file_path, key, iv)
-                    new_file_path = os.path.join(current_path, f"decrypted_{file}")
-                    with open(new_file_path, 'wb') as f:
-                        f.write(decrypted_data)
-                    print(f"تم حفظ الملف المفكك: {new_file_path}")
-                except Exception as e:
-                    print(f"حدث خطأ أثناء فك التشفير: {e}")
-    else:
-        for file in os.listdir(current_path):
-            if file.endswith(f".{ext}"):
-                file_path = os.path.join(current_path, file)
-                print(f"فك تشفير {file_path}")
+    # Decompress the data using zlib
+    decompressed_data = zlib.decompress(decoded_data)
 
-                try:
-                    decrypted_data = decrypt_function(file_path)
-                    new_file_path = os.path.join(current_path, f"decrypted_{file}")
-                    with open(new_file_path, 'w' if ext != 'zlib' else 'wb') as f:
-                        f.write(decrypted_data)
-                    print(f"تم حفظ الملف المفكك: {new_file_path}")
-                except Exception as e:
-                    print(f"حدث خطأ أثناء فك التشفير: {e}")
+    # Decrypt the data using AES
+    decrypted_data = decrypt_aes(decompressed_data, key, b"key")
 
-if __name__ == "__main__":
-    main()
+    # Inflate the data using lzma
+    decompressed_data = lzma.decompress(decrypted_data)
+
+    # Load the JSON data
+    return json.loads(decompressed_data)
+
+def decrypt_aes(data, key, iv):
+    """Decrypt data using AES"""
+    # Create a Cipher object with the AES algorithm and the provided key and IV
+    cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
+
+    # Create a decryptor object from the Cipher object
+    decryptor = cipher.decryptor()
+
+    # Decrypt the data
+    decrypted_data = decryptor.update(data) + decryptor.finalize()
+
+    return decrypted_data
+
+def decrypt_data(data, key):
+    """Decrypt the data based on the type of encryption"""
+    if type(data) is marshal.Marshaller:
+        # Unmarshal the data
+        data = data.data
+
+        # Unpickle the data to get the original code object
+        code_obj = marshal.loads(data)
+
+        # Decrypt the code object using the provided key
+        decrypted_code_obj = decrypt_aes(pickle.dumps(code_obj), key, b"key")
+
+        # Repickle the decrypted code object
+        decrypted_data = marshal.dumps
